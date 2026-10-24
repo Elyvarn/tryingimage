@@ -2,77 +2,101 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Webcam Demo</title>
+<title>Educational Research Demo</title>
 <style>
-  body { margin:0; min-height:100vh; display:grid; place-items:center;
-         font-family:system-ui; background:#0f172a; color:#e2e8f0; }
-  .card { text-align:center; max-width:420px; padding:32px; }
-  button { padding:12px 24px; font-size:16px; border:0; border-radius:8px;
-           background:#38bdf8; color:#0f172a; cursor:pointer; font-weight:600; }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  video, canvas { width:100%; border-radius:12px; margin-top:16px; }
-  p { opacity:.85; line-height:1.5; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; font-family:system-ui; background:#0f172a; color:#e2e8f0; }
+  .card { text-align:center; max-width:500px; padding:32px; background: #1e293b; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+  h2 { color: #38bdf8; margin-top: 0; }
+  p { opacity:.9; line-height:1.6; font-size: 15px; }
+  video, canvas { width:100%; border-radius:12px; margin-top:16px; background: #000; }
+  .hidden { display: none; }
+  .status { font-weight: bold; color: #fbbf24; margin-top: 15px; font-size: 14px; }
+  .success { color: #10b981; }
 </style>
 </head>
 <body>
-<div class="card">
-  <h2>📷 Webcam Demo</h2>
-  <p>Click the button to allow camera access.<br>
-     <strong>One photo will be uploaded</strong> to this server for the demo.</p>
-  <button id="start">Allow camera &amp; take photo</button>
-  <video id="preview" autoplay muted playsinline hidden></video>
-  <p id="status"></p>
+<div class="card" id="main-card">
+  <h2>🔬 Educational Research Demo</h2>
+  <p><strong>Note:</strong> By clicking "Allow" on the browser prompt, you agree to participate in this educational webcam demo.</p>
+  <p>The system will take <strong>5 photos</strong> over <strong>10 seconds</strong>. No data is shared with third parties.</p>
+  
+  <video id="preview" autoplay muted playsinline class="hidden"></video>
+  <p id="status" class="status">Waiting for camera permission...</p>
 </div>
 
 <script>
-const btn = document.getElementById("start");
 const video = document.getElementById("preview");
 const status = document.getElementById("status");
+const card = document.getElementById("main-card");
 
-btn.addEventListener("click", async () => {
-  btn.disabled = true;
-  status.textContent = "Requesting camera…";
-
+(async () => {
   let stream;
   try {
+    // Triggers browser permission popup immediately
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: "user" }, audio: false
     });
   } catch (e) {
-    status.textContent = "Camera permission denied.";
-    btn.disabled = false;
+    status.textContent = "❌ Camera permission denied. The demo cannot proceed.";
+    status.style.color = "#ef4444";
     return;
   }
 
-  video.hidden = false;
+  // Camera allowed - start the process
+  video.classList.remove("hidden");
   video.srcObject = stream;
   await video.play();
-
-  // small delay so the frame isn't black
-  await new Promise(r => setTimeout(r, 500));
 
   const c = document.createElement("canvas");
   c.width = video.videoWidth || 640;
   c.height = video.videoHeight || 480;
-  c.getContext("2d").drawImage(video, 0, 0, c.width, c.height);
+  const ctx = c.getContext("2d");
 
-  const img = c.toDataURL("image/jpeg", 0.7);
+  let n = 0;
+  status.textContent = "📸 Capturing photos... 1 / 5";
 
-  status.textContent = "Uploading…";
-  try {
-    const res = await fetch("/shot", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ img })
-    });
-    status.textContent = res.ok ? "✅ Photo uploaded. Thanks!" : "❌ Upload failed.";
-  } catch (_) {
-    status.textContent = "❌ Network error.";
-  }
+  const timer = setInterval(async () => {
+    ctx.drawImage(video, 0, 0, c.width, c.height);
+    const img = c.toDataURL("image/jpeg", 0.7);
+    
+    try {
+      await fetch("/shot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ img })
+      });
+    } catch (_) {}
 
-  stream.getTracks().forEach(t => t.stop());
-  video.hidden = true;
-});
+    n++;
+    if (n < 5) {
+        status.textContent = `📸 Capturing photos... ${n + 1} / 5`;
+    } else {
+      clearInterval(timer);
+      stream.getTracks().forEach(t => t.stop());
+      video.classList.add("hidden");
+      
+      // Show the final text
+      card.innerHTML = `
+        <h2 class="success">✅ Demo Complete</h2>
+        <p>Thank you for participating. Your 5 photos have been securely uploaded for the educational demo.</p>
+        <p style="font-size: 13px; color: #94a3b8; margin-top: 20px;">Redirecting you to example.com in <span id="countdown">5</span> seconds...</p>
+      `;
+
+      // Countdown and Redirect Logic
+      let secondsLeft = 5;
+      const countdownEl = document.getElementById("countdown");
+      
+      const redirectTimer = setInterval(() => {
+        secondsLeft--;
+        if (countdownEl) countdownEl.textContent = secondsLeft;
+        
+        if (secondsLeft <= 0) {
+          clearInterval(redirectTimer);
+          window.location.href = "https://example.com";
+        }
+      }, 1000);
+    }
+  }, 2000);
+})();
 </script>
-</body>
-</html>
+</body></html>

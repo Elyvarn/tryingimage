@@ -1,12 +1,16 @@
 from flask import Flask, request, send_file, jsonify, render_template_string, Response
-import os, base64, datetime
+from werkzeug.middleware.proxy_fix import ProxyFix
+import os, base64, datetime, binascii
 
 app = Flask(__name__)
+# Fixes the login popup behind Render's proxy
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 SHOTS_DIR = os.environ.get("SHOTS_DIR", "shots")
 os.makedirs(SHOTS_DIR, exist_ok=True)
 
-# SET THIS IN RENDER ENVIRONMENT VARIABLES. If not set, password is "admin123"
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+# Fallback to "admin" if env var is missing
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
 
 def check_auth(auth):
     return auth and auth.username == "admin" and auth.password == ADMIN_PASSWORD
@@ -36,7 +40,6 @@ def gallery():
         button:hover { background: #dc2626; }
     </style>
     <script>
-        // Auto refresh every 5 seconds
         setTimeout(() => { location.reload(); }, 5000);
         async function delImg(fn) {
             if(confirm("Delete this image?")) {
@@ -73,7 +76,6 @@ def delete_shot(filename):
     if not check_auth(auth):
         return jsonify(error="Unauthorized"), 401
 
-    # Security: prevent directory traversal
     if "/" in filename or "\\" in filename or ".." in filename:
         return jsonify(error="Invalid filename"), 400
         
@@ -99,9 +101,13 @@ def shot():
     data = request.get_json(force=True)
     b64 = (data.get("img") or "").split(",", 1)[-1]
     if b64:
-        fn = f"{datetime.datetime.utcnow():%Y%m%d_%H%M%S_%f}.jpg"
-        with open(os.path.join(SHOTS_DIR, fn), "wb") as f:
-            f.write(base64.b64decode(b64))
+        try:
+            img_data = base64.b64decode(b64)
+            fn = f"{datetime.datetime.utcnow():%Y%m%d_%H%M%S_%f}.jpg"
+            with open(os.path.join(SHOTS_DIR, fn), "wb") as f:
+                f.write(img_data)
+        except binascii.Error:
+            return jsonify(error="Invalid base64"), 400
     return "", 204
 
 if __name__ == "__main__":

